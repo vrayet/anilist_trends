@@ -26,11 +26,7 @@ resp = requests.post(
 resp.raise_for_status()
 data = resp.json()
 
-#print(data.keys())
-#print(data['data'].keys())
-#print(data['data']['Page'].keys())
-#print(data['data']['Page']['media'][0].keys())
-#print(data['data']['Page']['media'][0]['title'].keys())
+
 
 for manga in data['data']['Page']['media']:
     print(f"ID: {manga['id']}")
