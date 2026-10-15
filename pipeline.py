@@ -1,5 +1,6 @@
 import dlt
 from dlt.sources.helpers import requests
+from datetime import datetime, timezone
 
 QUERY = """
 query ($country: CountryCode, $page: Int) {
@@ -17,7 +18,7 @@ query ($country: CountryCode, $page: Int) {
 }
 """
 
-@dlt.resource(name="titles", write_disposition="append")
+@dlt.resource(name="titles", write_disposition="merge", primary_key=["id", "snapshot_date"])
 def trending_titles():
     for country in ["JP", "KR", "CN"]:
         resp= requests.post(
@@ -39,6 +40,7 @@ def trending_titles():
                 "status": manga['status'],
                 "chapters": manga['chapters'],
                 "country": country,
+                "snapshot_date": datetime.now(timezone.utc).date()
             }
 
 
