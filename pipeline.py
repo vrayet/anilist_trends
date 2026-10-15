@@ -18,10 +18,13 @@ query ($country: CountryCode, $page: Int) {
 }
 """
 
-@dlt.resource(name="titles", write_disposition="merge", primary_key=["id", "snapshot_date"])
+
+@dlt.resource(
+    name="titles", write_disposition="merge", primary_key=["id", "snapshot_date"]
+)
 def trending_titles():
     for country in ["JP", "KR", "CN"]:
-        resp= requests.post(
+        resp = requests.post(
             "https://graphql.anilist.co",
             json={"query": QUERY, "variables": {"country": country, "page": 1}},
             timeout=30,
@@ -29,22 +32,19 @@ def trending_titles():
         resp.raise_for_status()
         data = resp.json()
 
-        for manga in data['data']['Page']['media']:
-            yield{
-                "id": manga['id'],
-                "title_romaji": manga['title']['romaji'],
-                "title_english": manga['title']['english'],
-                "popularity": manga['popularity'],
-                "average_score": manga['averageScore'],
-                "trending": manga['trending'],
-                "status": manga['status'],
-                "chapters": manga['chapters'],
+        for manga in data["data"]["Page"]["media"]:
+            yield {
+                "id": manga["id"],
+                "title_romaji": manga["title"]["romaji"],
+                "title_english": manga["title"]["english"],
+                "popularity": manga["popularity"],
+                "average_score": manga["averageScore"],
+                "trending": manga["trending"],
+                "status": manga["status"],
+                "chapters": manga["chapters"],
                 "country": country,
-                "snapshot_date": datetime.now(timezone.utc).date()
+                "snapshot_date": datetime.now(timezone.utc).date(),
             }
-
-
-
 
 
 if __name__ == "__main__":
