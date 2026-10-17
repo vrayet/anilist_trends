@@ -1,0 +1,26 @@
+name: Daily AniList snapshot
+
+on:
+  schedule:
+    - cron: "30 0 * * *"   # 00:30 UTC = 06:00 IST, every day
+  workflow_dispatch:        # adds a "Run workflow" button for manual runs
+
+jobs:
+  snapshot:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+
+    steps:
+      - name: Check out the code
+        uses: actions/checkout@v4
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v6
+
+      - name: Install dependencies
+        run: uv sync
+
+      - name: Run the pipeline
+        env:
+          DESTINATION__POSTGRES__CREDENTIALS: ${{ secrets.DESTINATION__POSTGRES__CREDENTIALS }}
+        run: uv run python pipeline.py
