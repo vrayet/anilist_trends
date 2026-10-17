@@ -23,8 +23,7 @@ query ($country: CountryCode, $page: Int) {
 MAX_PAGES = 4
 
 @dlt.resource(
-    name="titles", write_disposition="merge", primary_key=["id", "snapshot_date"]
-)
+    name="titles", write_disposition="merge", primary_key=["id", "snapshot_date"], merge_key="snapshot_date",)
 def trending_titles():
     for country in ["JP", "KR", "CN"]:
         for page in range(1, MAX_PAGES + 1):
