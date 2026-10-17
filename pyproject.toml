@@ -8,6 +8,7 @@ authors = [
 ]
 requires-python = ">=3.14"
 dependencies = [
+    "dbt-postgres>=1.11.0",
     "dlt[duckdb,postgres]>=1.31.0",
     "requests>=2.34.2",
 ]

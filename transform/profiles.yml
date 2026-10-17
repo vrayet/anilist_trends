@@ -1,0 +1,12 @@
+anilist:
+  target: dev
+  outputs:
+    dev:
+      type: postgres
+      host: "{{ env_var('SUPABASE_HOST') }}"
+      user: "{{ env_var('SUPABASE_USER') }}"
+      password: "{{ env_var('SUPABASE_PASSWORD') }}"
+      port: 5432
+      dbname: postgres
+      schema: analytics
+      threads: 4

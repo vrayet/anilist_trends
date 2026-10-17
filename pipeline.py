@@ -15,6 +15,10 @@ query ($country: CountryCode, $page: Int) {
             trending
             status
             chapters
+            coverImage {
+                medium
+                color
+            }
         }
     }
 }
@@ -47,6 +51,8 @@ def trending_titles():
                     "chapters": manga["chapters"],
                     "country": country,
                     "snapshot_date": datetime.now(timezone.utc).date(),
+                    "cover_image_url": manga["coverImage"]["medium"],
+                    "cover_image_color": manga["coverImage"]["color"],
                 }
 
             if not data["data"]["Page"]["pageInfo"]["hasNextPage"]:

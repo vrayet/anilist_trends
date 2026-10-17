@@ -5,3 +5,6 @@ __pycache__/
 *.duckdb
 *.duckdb.wal
 .dlt/secrets.toml
+transform/target/
+transform/logs/
+transform/dbt_packages/

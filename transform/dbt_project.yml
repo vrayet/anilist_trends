@@ -1,0 +1,9 @@
+name: anilist
+version: "1.0.0"
+profile: anilist
+model-paths: ["models"]
+
+models:
+  anilist:
+    staging:
+      +materialized: view
