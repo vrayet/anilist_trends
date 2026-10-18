@@ -7,7 +7,7 @@ QUERY = """
 query ($country: CountryCode, $page: Int) {
     Page(page: $page, perPage: 50) {
         pageInfo {hasNextPage}
-        media(type: MANGA, countryOfOrigin: $country, sort: TRENDING_DESC) {
+        media(type: MANGA, countryOfOrigin: $country, sort: [TRENDING_DESC]) {
             id
             title { romaji english }
             popularity
@@ -29,6 +29,7 @@ MAX_PAGES = 4
 @dlt.resource(
     name="titles", write_disposition="merge", primary_key=["id", "snapshot_date"], merge_key="snapshot_date",)
 def trending_titles():
+    snapshot_date = datetime.now(timezone.utc).date()
     for country in ["JP", "KR", "CN"]:
         for page in range(1, MAX_PAGES + 1):
             resp = requests.post(
@@ -50,7 +51,7 @@ def trending_titles():
                     "status": manga["status"],
                     "chapters": manga["chapters"],
                     "country": country,
-                    "snapshot_date": datetime.now(timezone.utc).date(),
+                    "snapshot_date": snapshot_date,
                     "cover_image_url": manga["coverImage"]["medium"],
                     "cover_image_color": manga["coverImage"]["color"],
                 }
