@@ -7,7 +7,7 @@ QUERY = """
 query ($country: CountryCode, $page: Int) {
     Page(page: $page, perPage: 50) {
         pageInfo {hasNextPage}
-        media(type: MANGA, countryOfOrigin: $country, sort: [TRENDING_DESC, id]) {
+        media(type: MANGA, countryOfOrigin: $country, sort: [TRENDING_DESC, ID]) {
             id
             title { romaji english }
             popularity
