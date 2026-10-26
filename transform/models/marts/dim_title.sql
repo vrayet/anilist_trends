@@ -7,6 +7,6 @@ with ranked as (
         ) as rn
     from {{ ref('stg_titles') }}
 )
-select title_id, snapshot_date, popularity, trending, average_score, chapters
+select title_id, title_romaji, title_english, country, status, cover_image_url, cover_image_color AS cover_color
 from ranked
 where rn = 1
