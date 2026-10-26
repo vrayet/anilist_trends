@@ -7,5 +7,5 @@ models:
   anilist:
     staging:
       +materialized: view
-      marts:
-        +materialized: table
+    marts:
+      +materialized: table
