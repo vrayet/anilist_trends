@@ -4,7 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project status
 
-Early-stage ELT project: `pipeline.py` pulls trending manga from the AniList GraphQL API and loads it into Supabase Postgres with `dlt`; a dbt project in `transform/` models it. The installable package (`src/anilist_trends/`) is still the `uv init` stub and not wired to anything. No tests yet; `ruff` is a dev dependency with default settings (no `[tool.ruff]` config). README is empty.
+Early-stage ELT project: `pipeline.py` pulls trending manga from the AniList GraphQL API and loads it into Supabase Postgres with `dlt`; a dbt project in `transform/` models it into staging + marts. The installable package (`src/anilist_trends/`) is still the `uv init` stub and not wired to anything. No Python tests (only dbt data tests); `ruff` is a dev dependency with default settings (no `[tool.ruff]` config). README is empty.
 
 ## Commands
 
@@ -22,6 +22,8 @@ uv add <pkg>               # add a dependency (updates pyproject.toml + uv.lock)
 cd transform
 uv run dbt run --profiles-dir .                     # build all models
 uv run dbt run --profiles-dir . --select stg_titles # build one model
+uv run dbt test --profiles-dir .                    # run data tests (marts/schema.yml)
+uv run dbt build --profiles-dir .                   # run + test in DAG order
 uv run dbt debug --profiles-dir .                   # check the DB connection
 ```
 
@@ -29,13 +31,15 @@ uv run dbt debug --profiles-dir .                   # check the DB connection
 
 Data flow: AniList API → `pipeline.py` (dlt) → `raw.titles` in Supabase Postgres → dbt (`transform/`) → `analytics` schema.
 
-- `pipeline.py` — single `dlt` resource `titles` (function `trending_titles`). For each country `JP`/`KR`/`CN` it pages through the GraphQL query (`perPage: 50`, up to `MAX_PAGES = 4`, `sort: TRENDING_DESC`, `type: MANGA`), stopping early on `pageInfo.hasNextPage == false` and sleeping 2s between pages. Rows are flattened camelCase → snake_case (incl. `cover_image_url`/`cover_image_color` from `coverImage`) plus `country` and a UTC `snapshot_date`.
+- `pipeline.py` — single `dlt` resource `titles` (function `trending_titles`). For each country `JP`/`KR`/`CN` it pages through the GraphQL query (`perPage: 50`, up to `MAX_PAGES = 4`, `sort: [TRENDING_DESC, ID]`, `type: MANGA`; `ID` is a tiebreaker so paging is stable — sort values are GraphQL enums, so uppercase), stopping early on `pageInfo.hasNextPage == false` and sleeping 2s between pages. Rows are flattened camelCase → snake_case (incl. `cover_image_url`/`cover_image_color` from `coverImage`) plus `country` and a UTC `snapshot_date` computed once per run (so a run crossing midnight stays one snapshot).
   - Pipeline: `pipeline_name="anilist"`, `destination="postgres"`, `dataset_name="raw"` → table `raw.titles`.
   - `write_disposition="merge"`, `primary_key=["id", "snapshot_date"]`, `merge_key="snapshot_date"`: a rerun on the same UTC day replaces that day's whole snapshot (titles that fell out of the trending list are removed, not left stale); each new day adds a new snapshot. This is what makes the table a daily time series.
   - Uses `dlt.sources.helpers.requests` (dlt's drop-in wrapper with built-in retries) rather than plain `requests`.
   - DuckDB is still installed (`dlt[duckdb,postgres]`) and `*.duckdb` is gitignored — leftover from the original local destination.
 - `explore.py` — standalone script using plain `requests`; reference for the query format and response structure (`data.Page.media[]`).
-- `transform/` — dbt project (`profile: anilist`, adapter `dbt-postgres`). `models/staging/sources.yml` declares source `raw.titles`; `stg_titles.sql` is a 1:1 rename/select (`id` → `title_id`), materialized as a view. Staging models: no joins, no business logic. dbt writes to schema `analytics`.
+- `transform/` — dbt project (`profile: anilist`, adapter `dbt-postgres`). `models/staging/sources.yml` declares source `raw.titles`; `stg_titles.sql` is a 1:1 rename/select (`id` → `title_id`). Staging models: no joins, no business logic. dbt writes to schema `analytics`.
+  - Materialization is set per folder in `dbt_project.yml`: `staging` → view, `marts` → table. The `marts:` key must be a sibling of `staging:` (indentation matters; nesting it under `staging` silently does nothing).
+  - Marts (`models/marts/`): `fct_title_daily` — one row per `(title_id, snapshot_date)` with the daily measures (popularity, trending, average_score, chapters). `dim_title` — one row per title with descriptive attributes taken from its latest snapshot (`row_number()` over `snapshot_date desc`). Tests in `marts/schema.yml` cover grain uniqueness and not-null keys.
 - `.github/workflows/daily_pipeline.yml` — runs `pipeline.py` daily at 00:30 UTC (plus manual `workflow_dispatch`). Only the dlt load runs in CI; dbt does not.
 
 ## Credentials

@@ -24,3 +24,11 @@ jobs:
         env:
           DESTINATION__POSTGRES__CREDENTIALS: ${{ secrets.DESTINATION__POSTGRES__CREDENTIALS }}
         run: uv run python pipeline.py
+        
+      - name: Build dbt models
+        working-directory: transform
+        env:
+          SUPABASE_HOST: ${{ secrets.SUPABASE_HOST }}
+          SUPABASE_USER: ${{ secrets.SUPABASE_USER }}
+          SUPABASE_PASSWORD: ${{ secrets.SUPABASE_PASSWORD }}
+        run: uv run dbt build --profiles-dir .

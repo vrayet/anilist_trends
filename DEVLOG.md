@@ -17,17 +17,25 @@ Raw notes for a portfolio blog post once the project is done. Newest session at 
 | GitHub Actions cron for scheduling | Free, lives next to the code, no server to run | 2026-10-17 |
 | `merge_key="snapshot_date"` | Rerunning on the same day replaces that day's whole snapshot, so titles that dropped off don't linger | 2026-10-17 |
 | dbt for transforms, staging layer first | Keep raw data untouched; staging models only rename/clean, no business logic | 2026-10-17 |
+| Secondary sort `ID` after `TRENDING_DESC` | Ties in trending score could shuffle between pages (duplicates/misses); a unique tiebreaker makes paging stable | 2026-10-18 |
+| `snapshot_date` computed once per run | A run crossing midnight UTC would otherwise split into two snapshots | 2026-10-18 |
+| Star-schema marts: `fct_title_daily` + `dim_title` | Separate the daily measurements (fact, grain title × day) from descriptive attributes (dimension, one row per title) | 2026-10-24 |
+| `dim_title` attributes from the latest snapshot | Titles/status/cover can change over time; latest value via `row_number()` over `snapshot_date desc` | 2026-10-24 |
+| Marts as tables, staging as views | Configured per folder in `dbt_project.yml` | 2026-10-24 |
 
 ## Problems hit & how they were solved
 
-- _(add as they come up — these make the best blog material)_
+- **Sort enum casing:** `sort: [TRENDING_DESC, id]` was wrong — GraphQL enum values are uppercase, so it's `ID`. (2026-10-24)
+- **Marts built as views, not tables:** the `marts:` block in `dbt_project.yml` was indented under `staging:`, so its `+materialized: table` never applied. Unindented it to be a sibling of `staging:`. (2026-10-26)
+- **Fact model in the wrong folder:** `fct_title_daily.sql` was created in `models/staging/`, so it picked up staging config; moved to `models/marts/`. (2026-10-26)
+- **`dim_title` had the fact's columns:** its final `select` was copied from the fact model (measures instead of attributes); fixed to select title, country, status and cover fields. (2026-10-26)
+- **dbt `.user.yml`:** dbt generates a per-user `transform/.user.yml`; added to `transform/.gitignore`. (2026-10-26)
 
 ## Open questions / next steps
 
-- `snapshot_date` is computed per row, not once per run; a run crossing midnight UTC could split across two dates.
-- Query sorts only by `TRENDING_DESC` — ties can shuffle between pages (duplicates/misses). A secondary sort key would make paging stable.
 - dbt doesn't run in CI yet — only the dlt load does.
-- Next modelling layer beyond `stg_titles` (e.g. day-over-day trending changes).
+- Next modelling beyond the first marts (e.g. day-over-day trending changes).
+- `transform/.user.yml` is still tracked in git even though it's now ignored — needs `git rm --cached`.
 
 ---
 
@@ -47,6 +55,22 @@ Raw notes for a portfolio blog post once the project is done. Newest session at 
 - Added `merge_key="snapshot_date"` so same-day reruns replace the day's snapshot.
 - Set up a dbt project in `transform/` with source `raw.titles` and the first staging model `stg_titles` (view in `analytics`).
 - Refreshed `CLAUDE.md` and started this dev log.
+
+### 2026-10-18 — Stable paging
+- Changed the query sort to `[TRENDING_DESC, id]` to add a tiebreaker so pages don't overlap or skip titles.
+- Moved `snapshot_date` out of the per-row dict so it is computed once per run.
+- Updated `CLAUDE.md` and this dev log.
+
+### 2026-10-24 — First marts
+- Fixed the sort tiebreaker to `ID` (enum values are uppercase).
+- Added `fct_title_daily` (one row per title per day: popularity, trending, average_score, chapters) and `dim_title` (one row per title, attributes from its latest snapshot).
+- Added `marts/schema.yml` with data tests: uniqueness of `title_id || '-' || snapshot_date` on the fact, unique/not-null `title_id` on the dimension.
+
+### 2026-10-26 — Fixing the marts
+- Found the marts weren't materializing as tables: `marts:` config was nested under `staging:` in `dbt_project.yml`, and `fct_title_daily` lived in `models/staging/`. Fixed both.
+- Fixed `dim_title`'s column list (it had the fact's measures).
+- Ignored dbt's `.user.yml`.
+- Refreshed `CLAUDE.md` (marts, dbt test/build commands) and this dev log.
 
 <!--
 Entry template:
