@@ -15,3 +15,13 @@ models:
     columns:
       - name: title_id
         data_tests: [unique, not_null]
+  
+  - name: fct_title_growth
+    data_tests:
+      - unique:
+          column_name: "(title_id || '-' || snapshot_date)"
+    columns:
+      - name: title_id
+        data_tests: [not_null]
+      - name: snapshot_date
+        data_tests: [not_null]
