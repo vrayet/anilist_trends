@@ -44,6 +44,13 @@ Data flow: AniList API → `pipeline.py` (dlt) → `raw.titles` in Supabase Post
 - `page/` — static "trending today" page. `top10.sql` holds the logic (top 10 per country from the latest `snapshot_date`, joining `analytics.fct_title_daily` to `analytics.dim_title`, ranked by `trending desc, popularity desc, title_id`); `build_page.py` only runs that SQL and writes `site/index.html`. It connects with `DESTINATION__POSTGRES__CREDENTIALS` and `psycopg2` (a transitive dependency via `dlt[postgres]`/`dbt-postgres`, not declared in `pyproject.toml`), and refuses to write unless it gets exactly 30 rows (10 × JP/KR/CN). `site/` is gitignored build output.
 - `.github/workflows/daily_pipeline.yml` — daily at 00:30 UTC (plus manual `workflow_dispatch`): runs `pipeline.py`, then `dbt build --profiles-dir .` in `transform/` (models + tests), then `page/build_page.py`, then uploads `site/` with `actions/upload-pages-artifact` and publishes it with `actions/deploy-pages` (job has `pages: write`/`id-token: write` and the `github-pages` environment; the repo's Pages source must be "GitHub Actions"). Steps run in order, so a failed dbt test or a non-30-row result stops the deploy and the previous page stays live. Each step gets its own secrets (see Credentials).
 
+## Databricks migration (branch `databricks`, in progress)
+
+`databricks.yml` is a Databricks Asset Bundle (`bundle: anilist_trends`) that so far only declares Unity Catalog resources — no jobs or code are wired to it yet, and the Supabase/dbt flow above is still what runs in CI.
+- Catalog `${var.catalog}` (default `anilist`); medallion schemas `landing` (raw API files as received), `bronze` (raw JSON as append-only tables), `silver` (typed, deduped, one row per title per day), `gold` (Kimball star schema + page report tables); managed volume `landing.raw` for one JSON file per country per run.
+- Targets `dev` (default, schema prefix `dev_`) and `prod` (no prefix) so they never share tables; both use the Databricks CLI profile `anilist`.
+- `databricks bundle validate` / `databricks bundle deploy [-t prod]`. `.databricks/` (bundle state) is gitignored.
+
 ## Credentials
 
 - All credentials are env vars: GitHub secrets in CI; locally the gitignored root `.env` (there is no `.dlt/secrets.toml`). `.env` lines have no `export`, so `source .env` alone doesn't reach Python — load it with `uv run --env-file .env ...` (from `transform/`: `--env-file ../.env`).
