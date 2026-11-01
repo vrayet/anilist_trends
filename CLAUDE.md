@@ -12,8 +12,9 @@ Managed with `uv` (build backend `uv_build`), Python 3.14 (pinned in `.python-ve
 
 ```sh
 uv sync                    # install deps (incl. dev group: ruff) into .venv
-uv run python pipeline.py  # fetch trending manga and load into Postgres (hits the live API + DB)
+uv run --env-file .env python pipeline.py  # fetch trending manga and load into Postgres (hits the live API + DB)
 uv run python explore.py   # print the raw AniList response shape (hits the live API)
+uv run --env-file .env python page/build_page.py  # render site/index.html from the analytics marts (hits the DB)
 uv run ruff check .        # lint
 uv run ruff format .       # format
 uv add <pkg>               # add a dependency (updates pyproject.toml + uv.lock)
@@ -39,13 +40,15 @@ Data flow: AniList API → `pipeline.py` (dlt) → `raw.titles` in Supabase Post
 - `explore.py` — standalone script using plain `requests`; reference for the query format and response structure (`data.Page.media[]`).
 - `transform/` — dbt project (`profile: anilist`, adapter `dbt-postgres`). `models/staging/sources.yml` declares source `raw.titles`; `stg_titles.sql` is a 1:1 rename/select (`id` → `title_id`). Staging models: no joins, no business logic. dbt writes to schema `analytics`.
   - Materialization is set per folder in `dbt_project.yml`: `staging` → view, `marts` → table. The `marts:` key must be a sibling of `staging:` (indentation matters; nesting it under `staging` silently does nothing).
-  - Marts (`models/marts/`): `fct_title_daily` — one row per `(title_id, snapshot_date)` with the daily measures (popularity, trending, average_score, chapters). `dim_title` — one row per title with descriptive attributes taken from its latest snapshot (`row_number()` over `snapshot_date desc`). Tests in `marts/schema.yml` cover grain uniqueness and not-null keys.
-- `.github/workflows/daily_pipeline.yml` — runs `pipeline.py` daily at 00:30 UTC (plus manual `workflow_dispatch`). Only the dlt load runs in CI; dbt does not.
+  - Marts (`models/marts/`): `fct_title_daily` — one row per `(title_id, snapshot_date)` with the daily measures (popularity, trending, average_score, chapters). `dim_title` — one row per title with descriptive attributes taken from its latest snapshot (`row_number()` over `snapshot_date desc`). `fct_title_growth` — built on `fct_title_daily`; per `(title_id, snapshot_date)` it uses `LAG` to get the change in popularity since that title's previous snapshot, plus `days_between` and `popularity_per_day` (handles gaps when a title drops off and returns). A title's first snapshot has no previous row, so it is filtered out. Tests in `marts/schema.yml` cover grain uniqueness and not-null keys.
+- `page/` — static "trending today" page. `top10.sql` holds the logic (top 10 per country from the latest `snapshot_date`, joining `analytics.fct_title_daily` to `analytics.dim_title`, ranked by `trending desc, popularity desc, title_id`); `build_page.py` only runs that SQL and writes `site/index.html`. It connects with `DESTINATION__POSTGRES__CREDENTIALS` and `psycopg2` (a transitive dependency via `dlt[postgres]`/`dbt-postgres`, not declared in `pyproject.toml`), and refuses to write unless it gets exactly 30 rows (10 × JP/KR/CN). `site/` is gitignored build output.
+- `.github/workflows/daily_pipeline.yml` — daily at 00:30 UTC (plus manual `workflow_dispatch`): runs `pipeline.py`, then `dbt build --profiles-dir .` in `transform/` (models + tests), then `page/build_page.py`, then uploads `site/` with `actions/upload-pages-artifact` and publishes it with `actions/deploy-pages` (job has `pages: write`/`id-token: write` and the `github-pages` environment; the repo's Pages source must be "GitHub Actions"). Steps run in order, so a failed dbt test or a non-30-row result stops the deploy and the previous page stays live. Each step gets its own secrets (see Credentials).
 
 ## Credentials
 
-- dlt: `DESTINATION__POSTGRES__CREDENTIALS` (connection string) — env var in CI (GitHub secret), or `.dlt/secrets.toml` locally (gitignored).
-- dbt: `transform/profiles.yml` reads `SUPABASE_HOST`, `SUPABASE_USER`, `SUPABASE_PASSWORD` from the environment (`.env` is gitignored).
+- All credentials are env vars: GitHub secrets in CI; locally the gitignored root `.env` (there is no `.dlt/secrets.toml`). `.env` lines have no `export`, so `source .env` alone doesn't reach Python — load it with `uv run --env-file .env ...` (from `transform/`: `--env-file ../.env`).
+- `DESTINATION__POSTGRES__CREDENTIALS` (connection string): used by dlt (`pipeline.py`) and by `page/build_page.py` (via `os.environ`).
+- `SUPABASE_HOST`, `SUPABASE_USER`, `SUPABASE_PASSWORD`: read by `transform/profiles.yml` for dbt.
 
 ## Dev log
 

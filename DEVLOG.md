@@ -22,6 +22,8 @@ Raw notes for a portfolio blog post once the project is done. Newest session at 
 | Star-schema marts: `fct_title_daily` + `dim_title` | Separate the daily measurements (fact, grain title × day) from descriptive attributes (dimension, one row per title) | 2026-10-24 |
 | `dim_title` attributes from the latest snapshot | Titles/status/cover can change over time; latest value via `row_number()` over `snapshot_date desc` | 2026-10-24 |
 | Marts as tables, staging as views | Configured per folder in `dbt_project.yml` | 2026-10-24 |
+| `dbt build` as a CI step after the dlt load | Marts stay in sync with each day's snapshot, and data tests run every day | 2026-10-27 |
+| `fct_title_growth` uses `LAG` over the title's previous snapshot, plus `days_between` | Titles can drop out of trending and return, so "previous snapshot" isn't always yesterday; `popularity_per_day` normalises for the gap | 2026-10-29 |
 
 ## Problems hit & how they were solved
 
@@ -30,12 +32,13 @@ Raw notes for a portfolio blog post once the project is done. Newest session at 
 - **Fact model in the wrong folder:** `fct_title_daily.sql` was created in `models/staging/`, so it picked up staging config; moved to `models/marts/`. (2026-10-26)
 - **`dim_title` had the fact's columns:** its final `select` was copied from the fact model (measures instead of attributes); fixed to select title, country, status and cover fields. (2026-10-26)
 - **dbt `.user.yml`:** dbt generates a per-user `transform/.user.yml`; added to `transform/.gitignore`. (2026-10-26)
+- **`.user.yml` ignore never matched:** `transform/.gitignore` had `transform/.user.yml`, but nested `.gitignore` paths are relative to their own folder, so it pointed at `transform/transform/.user.yml`. Changed it to `.user.yml` and untracked the file with `git rm --cached`. (2026-11-01)
+- **Page script couldn't import `psycopg2`:** ran it with the system `/bin/python` instead of the project venv; `uv run python ...` uses `.venv`. (2026-11-01)
+- **Page script `KeyError` on `DESTINATION__POSTGRES__CREDENTIALS`:** the credentials live in `.env`, which nothing loads automatically (and its lines have no `export`, so `source .env` isn't enough). Fixed with `uv run --env-file .env ...`. (2026-11-01)
 
 ## Open questions / next steps
 
-- dbt doesn't run in CI yet — only the dlt load does.
-- Next modelling beyond the first marts (e.g. day-over-day trending changes).
-- `transform/.user.yml` is still tracked in git even though it's now ignored — needs `git rm --cached`.
+- Growth for other measures (e.g. `trending`, `average_score`); so far `fct_title_growth` only covers popularity.
 
 ---
 
@@ -71,6 +74,23 @@ Raw notes for a portfolio blog post once the project is done. Newest session at 
 - Fixed `dim_title`'s column list (it had the fact's measures).
 - Ignored dbt's `.user.yml`.
 - Refreshed `CLAUDE.md` (marts, dbt test/build commands) and this dev log.
+
+### 2026-10-27 — dbt in CI
+- Added a "Build dbt models" step to the GitHub Actions workflow: after the dlt load it runs `dbt build --profiles-dir .` in `transform/`, with `SUPABASE_HOST`/`USER`/`PASSWORD` from repo secrets.
+
+### 2026-10-29 — Growth mart
+- Added `fct_title_growth`: built on `fct_title_daily`, it uses `LAG` per title to compute `popularity_change`, `days_between` and `popularity_per_day` since the previous snapshot; each title's first snapshot is dropped (nothing to compare against).
+- Added grain-uniqueness and not-null key tests for it in `marts/schema.yml`.
+- Refreshed `CLAUDE.md` (CI now runs dbt, new mart) and this dev log.
+
+### 2026-11-01 — Static "trending today" page (in progress, uncommitted)
+- Added `page/top10.sql`: top 10 titles per country from the latest snapshot, `fct_title_daily` joined to `dim_title`, display title falls back from English to romaji.
+- Added `page/build_page.py`: runs the SQL with `psycopg2` and renders `site/index.html` (three sections JP/KR/CN with covers, rank, trending and popularity). The SQL holds the logic; the script only renders.
+- Guard: the script refuses to publish unless exactly 30 rows come back.
+- Ignored `site/` (generated output); fixed the `.user.yml` ignore pattern and untracked the file.
+- First local run: hit the system-Python and missing-env-var problems above; with `--env-file .env` it wrote all 30 titles for the 2026-11-01 snapshot.
+- Added page deployment to the daily workflow: after `dbt build` it runs `build_page.py`, uploads `site/` with `actions/upload-pages-artifact@v3` and deploys with `actions/deploy-pages@v4` to GitHub Pages.
+- Refreshed `CLAUDE.md` and this dev log.
 
 <!--
 Entry template:
