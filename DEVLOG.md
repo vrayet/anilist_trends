@@ -24,6 +24,7 @@ Raw notes for a portfolio blog post once the project is done. Newest session at 
 | Marts as tables, staging as views | Configured per folder in `dbt_project.yml` | 2026-10-24 |
 | `dbt build` as a CI step after the dlt load | Marts stay in sync with each day's snapshot, and data tests run every day | 2026-10-27 |
 | `fct_title_growth` uses `LAG` over the title's previous snapshot, plus `days_between` | Titles can drop out of trending and return, so "previous snapshot" isn't always yesterday; `popularity_per_day` normalises for the gap | 2026-10-29 |
+| Databricks bundle with a schema `prefix` variable per target (`dev_` / none) | Dev and prod never share tables | 2026-11-01 |
 
 ## Problems hit & how they were solved
 
@@ -90,6 +91,13 @@ Raw notes for a portfolio blog post once the project is done. Newest session at 
 - Ignored `site/` (generated output); fixed the `.user.yml` ignore pattern and untracked the file.
 - First local run: hit the system-Python and missing-env-var problems above; with `--env-file .env` it wrote all 30 titles for the 2026-11-01 snapshot.
 - Added page deployment to the daily workflow: after `dbt build` it runs `build_page.py`, uploads `site/` with `actions/upload-pages-artifact@v3` and deploys with `actions/deploy-pages@v4` to GitHub Pages.
+- Refreshed `CLAUDE.md` and this dev log.
+
+### 2026-11-01 — Page shipped; starting a Databricks branch
+- Committed the trending page and its Pages deploy (`22b44ef`), then restyled the page CSS (`cc34d24`).
+- Started a `databricks` branch with a Databricks Asset Bundle (`databricks.yml`, uncommitted): Unity Catalog `anilist` with `landing`/`bronze`/`silver`/`gold` schemas and a managed `landing.raw` volume for raw JSON files (one per country per run).
+- Two targets, `dev` (default) and `prod`, both on CLI profile `anilist`; a schema-name `prefix` variable (`dev_` vs none) so dev and prod never share tables.
+- Ignored `.databricks/` (bundle state).
 - Refreshed `CLAUDE.md` and this dev log.
 
 <!--

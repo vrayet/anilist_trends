@@ -1,0 +1,49 @@
+bundle:
+  name: anilist_trends
+
+variables:
+  catalog:
+    description: Unity Catalog catalog for every table and volume
+    default: anilist
+  prefix:
+    description: Schema name prefix, so dev and prod never share tables
+
+targets:
+  dev:
+    default: true
+    workspace:
+      profile: anilist
+    variables:
+      prefix: dev_
+  prod:
+    workspace:
+      profile: anilist
+    variables:
+      prefix: ""
+
+resources:
+  schemas:
+    landing:
+      catalog_name: ${var.catalog}
+      name: ${var.prefix}landing
+      comment: Raw API files exactly as received. Never edited.
+    bronze:
+      catalog_name: ${var.catalog}
+      name: ${var.prefix}bronze
+      comment: Raw JSON as tables, append-only.
+    silver:
+      catalog_name: ${var.catalog}
+      name: ${var.prefix}silver
+      comment: Typed, deduplicated, one row per title per day.
+    gold:
+      catalog_name: ${var.catalog}
+      name: ${var.prefix}gold
+      comment: Kimball star schema and page report tables.
+
+  volumes:
+    raw:
+      catalog_name: ${var.catalog}
+      schema_name: ${resources.schemas.landing.name}
+      name: raw
+      volume_type: MANAGED
+      comment: Landing zone. One JSON file per country per run.
