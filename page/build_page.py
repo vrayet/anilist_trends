@@ -79,10 +79,10 @@ def render(rows, as_of):
     .grid {{ display:grid; grid-template-columns:repeat(auto-fit,minmax(300px,1fr)); gap:24px; }}
     ol {{ list-style:none; padding:0; margin:0; }}
     .card {{ display:flex; align-items:center; gap:12px; padding:8px 0; border-bottom:1px solid var(--line); }}
-    .rank {{ width:1.5em; text-align:right; color:var(--muted); font-variant-numeric:tabular-nums; }}
-    img {{ border-radius:4px; object-fit:cover; flex-shrink:0; }}
-    .meta {{ min-width:0; }}
-    .title {{ margin:0; font-weight:600; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }}
+    .rank {{ flex:0 0 1.5em; text-align:right; color:var(--muted); font-variant-numeric:tabular-nums; }}
+    img {{ flex:0 0 50px; border-radius:4px; object-fit:cover; }}
+    .meta {{ flex:1; min-width:0; }}
+    .title {{ margin:0; font-weight:600; display:-webkit-box; -webkit-line-clamp:2; -webkit-box-orient:vertical; overflow:hidden; }}
     .nums {{ margin:2px 0 0; font-size:.85em; color:var(--muted); }}
     footer {{ margin-top:32px; font-size:.85em; color:var(--muted); }}
   </style>
