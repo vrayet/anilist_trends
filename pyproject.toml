@@ -1,24 +1,16 @@
 [project]
 name = "anilist-trends"
 version = "0.1.0"
-description = "Add your description here"
+description = "Daily trending manga from AniList: a medallion pipeline on Databricks"
 readme = "README.md"
 authors = [
     { name = "vrayet", email = "vedant.devhare@gmail.com" }
 ]
 requires-python = ">=3.14"
 dependencies = [
-    "dbt-postgres>=1.11.0",
-    "dlt[duckdb,postgres]>=1.31.0",
     "requests>=2.34.2",
 ]
 
-[project.scripts]
-anilist-trends = "anilist_trends:main"
-
-[build-system]
-requires = ["uv_build>=0.13.1,<0.14.0"]
-build-backend = "uv_build"
 
 [dependency-groups]
 dev = [

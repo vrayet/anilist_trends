@@ -34,6 +34,7 @@ Raw notes for a portfolio blog post once the project is done. Newest session at 
 - **`dim_title` had the fact's columns:** its final `select` was copied from the fact model (measures instead of attributes); fixed to select title, country, status and cover fields. (2026-10-26)
 - **dbt `.user.yml`:** dbt generates a per-user `transform/.user.yml`; added to `transform/.gitignore`. (2026-10-26)
 - **`.user.yml` ignore never matched:** `transform/.gitignore` had `transform/.user.yml`, but nested `.gitignore` paths are relative to their own folder, so it pointed at `transform/transform/.user.yml`. Changed it to `.user.yml` and untracked the file with `git rm --cached`. (2026-11-01)
+- **`databricks fs cp` into a volume failed:** the target folder didn't exist yet; create it with `databricks fs mkdir` first. (2026-11-01)
 - **Page script couldn't import `psycopg2`:** ran it with the system `/bin/python` instead of the project venv; `uv run python ...` uses `.venv`. (2026-11-01)
 - **Page script `KeyError` on `DESTINATION__POSTGRES__CREDENTIALS`:** the credentials live in `.env`, which nothing loads automatically (and its lines have no `export`, so `source .env` isn't enough). Fixed with `uv run --env-file .env ...`. (2026-11-01)
 
@@ -99,6 +100,47 @@ Raw notes for a portfolio blog post once the project is done. Newest session at 
 - Two targets, `dev` (default) and `prod`, both on CLI profile `anilist`; a schema-name `prefix` variable (`dev_` vs none) so dev and prod never share tables.
 - Ignored `.databricks/` (bundle state).
 - Refreshed `CLAUDE.md` and this dev log.
+
+### 2026-11-01 — Databricks session 1
+- Egress test (can the workspace reach the AniList API?): `TODO: paste the output line`
+- Databricks CLI v1.23.0, logged in through OAuth (profile `anilist`, `auth_type = databricks-cli`).
+- Created the `anilist` catalog by hand in the workspace; the bundle only creates schemas and volumes inside it, so the catalog is a prerequisite to list in the README.
+- `databricks bundle deploy`: first run created 5 resources (4 schemas + the `raw` volume); a second run reported all 5 unchanged.
+- Checked that `.env` is not synced to the workspace by the bundle.
+- Known limit: I'm running as a workspace admin, so nothing has been tested yet with narrower permissions.
+- `databricks fs cp` into the volume fails unless the target folder exists; run `databricks fs mkdir` first.
+- Kimball notes (what it says → where it lands in AniList Trends):
+  - What it says:
+    The big idea (from Star Schemas and OLAP Cubes)
+    Dimensional modeling splits data into two kinds:
+    - Facts: the measurements from a business event.
+    - Dimensions: the "who, what, where, when, why and how" context around it.
+
+    A star schema builds this in a relational database: a central fact table joined to dimension tables by primary/foreign keys. An OLAP cube is a multidimensional version, usually built from a star schema and queried with languages more analytic than SQL. The approach works whichever warehouse architecture you follow, Kimball's or Inmon's.
+
+    The method (from Four Step Dimensional Design Process)
+    1. Select the business process (Business Processes)
+      - A real operational activity, like taking an order or processing a claim.
+      - Each process's events produce the metrics that become facts. Most fact tables cover one process.
+      - Choosing the process gives the design a clear target.
+    2. Declare the grain (Grain), the most important step
+      - The grain states exactly what one row of the fact table represents. It's a binding contract.
+      - Declare it before choosing dimensions or facts, because everything else must match it.
+      - Start with atomic grain, the lowest level the process captures, because it can answer questions nobody predicted. Summaries are only for performance.
+      - Never mix grains in one table. A different grain means a separate table.
+    3. Identify the dimensions (Dimensions for Descriptive Context)
+      - The descriptive attributes BI tools use to filter and group facts.
+      - Where possible, each dimension should have a single value per fact row.
+      - Dimensions are called the "soul" of the warehouse because they drive the user's expegovernance effort.
+    4. Identify the facts (Facts for Measurements)
+      - Measurements of the event, almost always numeric.
+      - One row matches one measurement event at the declared grain, and is based on what actually happened, not on what a report needs.
+      - Only include facts that match the grain. In retail sales, quantity sold and price qulary doesn't.
+
+    After these four steps, the team picks table and column names and business rules, with buso they buy in.
+    
+    
+    → TODO where it lands in AniList Trends.
 
 <!--
 Entry template:
