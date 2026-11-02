@@ -25,6 +25,7 @@ Raw notes for a portfolio blog post once the project is done. Newest session at 
 | `dbt build` as a CI step after the dlt load | Marts stay in sync with each day's snapshot, and data tests run every day | 2026-10-27 |
 | `fct_title_growth` uses `LAG` over the title's previous snapshot, plus `days_between` | Titles can drop out of trending and return, so "previous snapshot" isn't always yesterday; `popularity_per_day` normalises for the gap | 2026-10-29 |
 | Databricks bundle with a schema `prefix` variable per target (`dev_` / none) | Dev and prod never share tables | 2026-11-01 |
+| Delete v1 code from the `databricks` branch instead of keeping it alongside | v1 stays on `main`; the v2 branch only holds the Databricks rebuild | 2026-11-02 |
 
 ## Problems hit & how they were solved
 
@@ -41,6 +42,7 @@ Raw notes for a portfolio blog post once the project is done. Newest session at 
 ## Open questions / next steps
 
 - Growth for other measures (e.g. `trending`, `average_score`); so far `fct_title_growth` only covers popularity.
+- v2: ingestion into `landing.raw`, bronze/silver/gold tables, a Databricks job, and porting `page/` to read from gold.
 
 ---
 
@@ -102,45 +104,27 @@ Raw notes for a portfolio blog post once the project is done. Newest session at 
 - Refreshed `CLAUDE.md` and this dev log.
 
 ### 2026-11-01 — Databricks session 1
-- Egress test (can the workspace reach the AniList API?): `TODO: paste the output line`
+- Egress test from a Free Edition notebook to graphql.anilist.co returned 200 `{"data":{"Media":{"id":30002,"title":{"romaji":"Berserk"}}}}`, so `fetch.py` can run on Databricks.
 - Databricks CLI v1.23.0, logged in through OAuth (profile `anilist`, `auth_type = databricks-cli`).
 - Created the `anilist` catalog by hand in the workspace; the bundle only creates schemas and volumes inside it, so the catalog is a prerequisite to list in the README.
 - `databricks bundle deploy`: first run created 5 resources (4 schemas + the `raw` volume); a second run reported all 5 unchanged.
 - Checked that `.env` is not synced to the workspace by the bundle.
 - Known limit: I'm running as a workspace admin, so nothing has been tested yet with narrower permissions.
 - `databricks fs cp` into the volume fails unless the target folder exists; run `databricks fs mkdir` first.
-- Kimball notes (what it says → where it lands in AniList Trends):
-  - What it says:
-    The big idea (from Star Schemas and OLAP Cubes)
-    Dimensional modeling splits data into two kinds:
-    - Facts: the measurements from a business event.
-    - Dimensions: the "who, what, where, when, why and how" context around it.
+- 2026-11-02 ~00:46, merged PR #1 (`databricks` → `main`) by accident, which deleted v1's workflow from `main`. Fixed with `git reset --hard cc34d24` and `git push --force-with-lease origin main`. Chose reset over `git revert -m 1` because reverting a merge commit makes git treat those changes as already merged, so the real `databricks` → `main` merge at cutover would silently drop them.
+- Kimball four-step, applied:
+  - Business process: AniList's daily trending ranking of manga per country of origin, captured once a day.
+  - Grain: one row = one title on one snapshot_date. A title has a row only on days it is in its country's top 200; no row means not ranked, not zero.
+  - Dimensions: dim_title (titles, cover, status, genres; SCD2 on status) and dim_date.
+  - Facts: trending and popularity. title_id is a foreign key, not a fact. Popularity is semi-additive: sum across titles on one day, never across days.
+  - Dropping the catalog deletes the managed Volume's raw files: infra rebuilds with one deploy, data does not.
 
-    A star schema builds this in a relational database: a central fact table joined to dimension tables by primary/foreign keys. An OLAP cube is a multidimensional version, usually built from a star schema and queried with languages more analytic than SQL. The approach works whichever warehouse architecture you follow, Kimball's or Inmon's.
-
-    The method (from Four Step Dimensional Design Process)
-    1. Select the business process (Business Processes)
-      - A real operational activity, like taking an order or processing a claim.
-      - Each process's events produce the metrics that become facts. Most fact tables cover one process.
-      - Choosing the process gives the design a clear target.
-    2. Declare the grain (Grain), the most important step
-      - The grain states exactly what one row of the fact table represents. It's a binding contract.
-      - Declare it before choosing dimensions or facts, because everything else must match it.
-      - Start with atomic grain, the lowest level the process captures, because it can answer questions nobody predicted. Summaries are only for performance.
-      - Never mix grains in one table. A different grain means a separate table.
-    3. Identify the dimensions (Dimensions for Descriptive Context)
-      - The descriptive attributes BI tools use to filter and group facts.
-      - Where possible, each dimension should have a single value per fact row.
-      - Dimensions are called the "soul" of the warehouse because they drive the user's expegovernance effort.
-    4. Identify the facts (Facts for Measurements)
-      - Measurements of the event, almost always numeric.
-      - One row matches one measurement event at the declared grain, and is based on what actually happened, not on what a report needs.
-      - Only include facts that match the grain. In retail sales, quantity sold and price qulary doesn't.
-
-    After these four steps, the team picks table and column names and business rules, with buso they buy in.
-    
-    
-    → TODO where it lands in AniList Trends.
+### 2026-11-02 — Clearing v1 out of the v2 branch
+- Removed the v1 code from the `databricks` branch (`c8bdf72`): `pipeline.py`, `explore.py`, the dbt project in `transform/`, the GitHub Actions workflow and the `src/` stub. It stays on `main`.
+- Dropped `dlt` and `dbt-postgres` from dependencies (only `requests` remains) along with the build backend and console script; project description is now "a medallion pipeline on Databricks".
+- Stopped tracking `.vscode/settings.json` (`92dcbc8`).
+- `page/` was kept, but it doesn't run on this branch yet: `psycopg2` went away with dlt/dbt, and it reads Supabase `analytics.*` tables.
+- Refreshed `CLAUDE.md` for the v2 branch and this dev log.
 
 <!--
 Entry template:
