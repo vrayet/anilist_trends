@@ -1,0 +1,83 @@
+"""Fetch AniList trending manga per country; write raw API responses to the landing Volume."""
+import argparse
+import datetime as dt
+import json
+import time
+from pathlib import Path
+
+import requests
+
+API_URL = "https://graphql.anilist.co"
+COUNTRIES = ["JP", "KR", "CN"]
+DEFAULT_LANDING_DIR = Path("/Volumes/anilist/dev_landing/raw")
+PAGES, PER_PAGE = 4, 50
+QUERY = """ 
+query ($country: CountryCode, $page: Int) {
+    Page(page: $page, perPage: 50) {
+        pageInfo {hasNextPage}
+        media(type: MANGA, countryOfOrigin: $country, sort: [TRENDING_DESC, ID]) {
+            id
+            title { romaji english }
+            popularity
+            description
+            genres
+            averageScore
+            trending
+            status
+            chapters
+            coverImage {
+                medium
+                color
+            }
+        }
+    }
+} 
+"""
+
+def fetch_page(country: str, page: int) -> dict:
+    resp = requests.post(
+        API_URL,
+        json={"query": QUERY, "variables": {"country": country, "page": page}}, 
+        timeout=30
+    )
+    resp.raise_for_status()
+    body = resp.json()
+    
+    if "errors" in body:
+        raise RuntimeError(f"AniList errors for {country}, page {page}: {body['errors']}")
+    return body
+
+def fetch_country(country:str) -> list[dict]:
+    pages = []
+    for page in range(1, PAGES + 1):
+        if page > 1:
+            time.sleep(2)
+        body = fetch_page(country, page)
+        pages.append(body)
+        if not body["data"]["Page"]["pageInfo"]["hasNextPage"]:
+            break
+    return pages
+
+def write_raw(pages:list[dict], landing_dir:Path, snapshot_date: str, country:str, run_ts:str) -> Path:
+    folder = landing_dir / f"snapshot_date={snapshot_date}" / f"country={country}"
+    folder.mkdir(parents=True, exist_ok=True)
+    path = folder / f"run={run_ts}.json"
+    with open(path, "x") as f:
+        json.dump(pages, f)
+    return path
+
+def main() -> None:
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument("--snapshot-date", default=dt.datetime.now(dt.UTC).date().isoformat())
+    parser.add_argument("--landing-dir", type=Path, default=DEFAULT_LANDING_DIR)
+    args = parser.parse_args()
+    run_ts = dt.datetime.now(dt.UTC).strftime("%Y%m%dT%H%M%SZ")
+
+    fetched = {country: fetch_country(country) for country in COUNTRIES}
+    for country, pages in fetched.items():
+        path = write_raw(pages, args.landing_dir, args.snapshot_date, country, run_ts)
+        titles = sum(len(p["data"]["Page"]["media"]) for p in pages)
+        print(f"{country}: {titles} titles -> {path}")
+
+if __name__ == "__main__":
+    main()
