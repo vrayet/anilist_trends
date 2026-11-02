@@ -66,11 +66,11 @@ def write_raw(pages:list[dict], landing_dir:Path, snapshot_date: str, country:st
         json.dump(pages, f)
     return path
 
-def main() -> None:
+def main(argv: list[str] | None = None) -> None:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--snapshot-date", default=dt.datetime.now(dt.UTC).date().isoformat())
     parser.add_argument("--landing-dir", type=Path, default=DEFAULT_LANDING_DIR)
-    args = parser.parse_args()
+    args = parser.parse_args(argv)
     run_ts = dt.datetime.now(dt.UTC).strftime("%Y%m%dT%H%M%SZ")
 
     fetched = {country: fetch_country(country) for country in COUNTRIES}
