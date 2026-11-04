@@ -39,6 +39,32 @@ resources:
       catalog_name: ${var.catalog}
       name: ${var.prefix}gold
       comment: Kimball star schema and page report tables.
+    
+  jobs:
+    daily:
+      name: ${var.prefix}anilist_daily
+      # Logical date of the run. Default = the day the run was triggered (UTC).
+      # Override it only to re-run TODAY after a failure; see the warning below.
+      parameters:
+        - name: snapshot_date
+          default: "{{job.trigger.time.iso_date}}"
+      tasks:
+        - task_key: fetch
+          spark_python_task:
+            python_file: src/fetch.py
+            # Arrive in sys.argv exactly as on your laptop, which is why main(argv=None) matters.
+            parameters:
+              - --snapshot-date
+              - "{{job.parameters.snapshot_date}}"
+              - --landing-dir
+              - /Volumes/${var.catalog}/${var.prefix}landing/raw
+          environment_key: default
+      environments:
+        - environment_key: default
+          spec:
+            environment_version: "3"   # serverless image with Python 3.12, matching your pin
+            dependencies:
+              - requests
 
   volumes:
     raw:
