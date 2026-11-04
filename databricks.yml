@@ -7,6 +7,9 @@ variables:
     default: anilist
   prefix:
     description: Schema name prefix, so dev and prod never share tables
+  schedule_status:
+    description: PAUSED or UNPAUSED. Only prod collects on a schedule; dev runs on demand.
+    default: PAUSED
 
 targets:
   dev:
@@ -20,6 +23,7 @@ targets:
       profile: anilist
     variables:
       prefix: ""
+      schedule_status: UNPAUSED
 
 resources:
   schemas:
@@ -39,7 +43,7 @@ resources:
       catalog_name: ${var.catalog}
       name: ${var.prefix}gold
       comment: Kimball star schema and page report tables.
-    
+
   jobs:
     daily:
       name: ${var.prefix}anilist_daily
@@ -48,6 +52,13 @@ resources:
       parameters:
         - name: snapshot_date
           default: "{{job.trigger.time.iso_date}}"
+      # 00:40 UTC = 06:10 IST. Runs 10 min after v1 (00:30 UTC), so the two
+      # pipelines never hit AniList's rate limit at the same moment.
+      schedule:
+        quartz_cron_expression: "0 40 0 * * ?"
+        timezone_id: UTC
+        pause_status: ${var.schedule_status}
+
       tasks:
         - task_key: fetch
           spark_python_task:
