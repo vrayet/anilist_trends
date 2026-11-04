@@ -7,16 +7,19 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 AniList Trends tracks which manga are trending on AniList by country of origin (JP/KR/CN) as a daily time series. Branch `databricks` is v2: a rebuild as a medallion pipeline on Databricks. The v1 code (dlt `pipeline.py` → Supabase Postgres → dbt `transform/` → GitHub Actions + Pages) was deleted from this branch in `c8bdf72` and still lives on `main`. Use `git show main:<path>` to see how v1 did something (query shape, paging, merge semantics).
 
 What exists on this branch so far:
-- `databricks.yml`: Asset Bundle that declares only Unity Catalog schemas and a volume. No jobs, notebooks or ingestion code yet.
+- `databricks.yml`: Asset Bundle that declares only Unity Catalog schemas and a volume. No jobs yet.
+- `src/fetch.py`: landing ingestion. Fetches JP/KR/CN and writes raw pages to `<landing_dir>/snapshot_date=<date>/country=<CC>/run=<UTC ts>.json` (default landing dir is the dev volume `/Volumes/anilist/dev_landing/raw`). Two invariants to keep: every country is fetched before any file is written (a failure leaves the day absent, never partial), and files are opened with mode `"x"` so nothing is ever overwritten. `main(argv=None)` is there because Databricks notebook kernels inject `-f` into `sys.argv`.
 - `page/` (v1 leftover, **does not run here**): `build_page.py` imports `psycopg2`, which is no longer in the lockfile, and `top10.sql` reads `analytics.fct_title_daily`/`analytics.dim_title` from Supabase. Both need porting to the gold layer.
-- No tests, no CI workflow. README is empty.
+- `tests/test_fetch.py`: offline pytest tests (`tmp_path`, `monkeypatch` on `requests.post`; no network or Databricks). No CI workflow. README is empty.
 
 ## Commands
 
-Uses `uv` with Python 3.14 (pinned in `.python-version`). There is no build backend or `[project.scripts]`, so the project itself is not installable. The only runtime dependency is `requests`.
+Uses `uv` with Python 3.12 (pinned in `.python-version` and `requires-python`) to match Databricks serverless. There is no build backend or `[project.scripts]`, so the project itself is not installable. The only runtime dependency is `requests`. pytest config sets `pythonpath = ["src"]`, so tests `import fetch` directly.
 
 ```sh
-uv sync                      # install deps (incl. dev group: ruff)
+uv sync                      # install deps (incl. dev group: ruff, pytest)
+uv run pytest                # offline tests in tests/
+uv run pytest tests/test_fetch.py::test_write_raw_refuses_to_overwrite   # single test
 uv run ruff check .          # lint (default settings, no [tool.ruff] config)
 uv run ruff format .
 
@@ -24,6 +27,7 @@ databricks bundle validate             # check databricks.yml
 databricks bundle deploy               # deploy to dev (default target)
 databricks bundle deploy -t prod
 databricks fs mkdir dbfs:/Volumes/...  # needed before `databricks fs cp` into a volume folder that doesn't exist yet
+                                       # note: `databricks fs ls` prints IST times with a Z suffix
 ```
 
 ## Architecture (Databricks bundle)

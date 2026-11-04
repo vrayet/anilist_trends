@@ -26,6 +26,11 @@ Raw notes for a portfolio blog post once the project is done. Newest session at 
 | `fct_title_growth` uses `LAG` over the title's previous snapshot, plus `days_between` | Titles can drop out of trending and return, so "previous snapshot" isn't always yesterday; `popularity_per_day` normalises for the gap | 2026-10-29 |
 | Databricks bundle with a schema `prefix` variable per target (`dev_` / none) | Dev and prod never share tables | 2026-11-01 |
 | Delete v1 code from the `databricks` branch instead of keeping it alongside | v1 stays on `main`; the v2 branch only holds the Databricks rebuild | 2026-11-02 |
+| Pin Python 3.12 (`requires-python = ">=3.12,<3.13"`) | Match Databricks serverless | 2026-11-02 |
+| `fetch.py` fetches every country before writing any file | A failure leaves the day absent, never partial | 2026-11-02 |
+| `write_raw` opens files with mode `"x"` | Raw files can't be refetched, so a filename clash must fail loudly instead of overwriting | 2026-11-02 |
+| `main(argv=None)` passed to `parse_args` | Databricks notebook kernels inject `-f` into `sys.argv`; callers can pass their own args | 2026-11-02 |
+| pytest (dev) with `pythonpath = ["src"]`, `testpaths = ["tests"]` | pytest only puts the test file's own folder on the import path, so `import fetch` needs `src` added; keeps `src` from becoming a package | 2026-11-04 |
 
 ## Problems hit & how they were solved
 
@@ -38,11 +43,13 @@ Raw notes for a portfolio blog post once the project is done. Newest session at 
 - **`databricks fs cp` into a volume failed:** the target folder didn't exist yet; create it with `databricks fs mkdir` first. (2026-11-01)
 - **Page script couldn't import `psycopg2`:** ran it with the system `/bin/python` instead of the project venv; `uv run python ...` uses `.venv`. (2026-11-01)
 - **Page script `KeyError` on `DESTINATION__POSTGRES__CREDENTIALS`:** the credentials live in `.env`, which nothing loads automatically (and its lines have no `export`, so `source .env` isn't enough). Fixed with `uv run --env-file .env ...`. (2026-11-01)
+- **`fetch.py` broke when run from a notebook:** Databricks notebook kernels inject `-f` into `sys.argv`, so `argparse` choked on it. Fixed with `main(argv=None)` → `parser.parse_args(argv)` (`3e70a15`). (2026-11-02)
+- **`databricks fs ls` timestamps:** they show IST times but with a `Z` (UTC) suffix, so they can't be read as UTC. (2026-11-02)
 
 ## Open questions / next steps
 
 - Growth for other measures (e.g. `trending`, `average_score`); so far `fct_title_growth` only covers popularity.
-- v2: ingestion into `landing.raw`, bronze/silver/gold tables, a Databricks job, and porting `page/` to read from gold.
+- v2: landing ingestion exists (`src/fetch.py`); still to do: bronze/silver/gold tables, a Databricks job, and porting `page/` to read from gold.
 
 ---
 
@@ -125,6 +132,22 @@ Raw notes for a portfolio blog post once the project is done. Newest session at 
 - Stopped tracking `.vscode/settings.json` (`92dcbc8`).
 - `page/` was kept, but it doesn't run on this branch yet: `psycopg2` went away with dlt/dbt, and it reads Supabase `analytics.*` tables.
 - Refreshed `CLAUDE.md` for the v2 branch and this dev log.
+
+### 2026-11-04 — Offline tests for fetch.py
+- From session 2a (2026-11-02):
+  - Pinned Python 3.12 to match Databricks serverless (`978957d`).
+  - Added `src/fetch.py` (`2a2437f`): fetches trending manga for JP/KR/CN and writes the raw API pages to the landing Volume as `snapshot_date=<date>/country=<CC>/run=<UTC ts>.json`. All countries are fetched before any file is written (all-or-nothing), and files are never overwritten.
+  - Databricks notebook kernels inject `-f` into `sys.argv`, which broke `argparse`; changed to `main(argv=None)` (`3e70a15`).
+  - `databricks fs ls` shows IST times with a `Z` suffix.
+- Added pytest to the dev group, with `pythonpath = ["src"]` in `[tool.pytest.ini_options]` because pytest only puts the test file's own folder on the import path (and `testpaths = ["tests"]`).
+- 3 offline tests in `tests/test_fetch.py` (no network, no Databricks):
+  - `write_raw` writes to the partitioned path layout.
+  - `write_raw` refuses to overwrite an existing file.
+  - `fetch_page` raises on an HTTP 200 whose body has GraphQL `errors`, using `monkeypatch` to swap out `requests.post`.
+- Proved the overwrite test actually tests something: switched `"x"` to `"w"` in `write_raw` and saw pytest report `DID NOT RAISE`.
+- ruff catches missing imports before pytest runs.
+- Added comments in `fetch.py` explaining the `"x"` mode and the fetch-all-then-write order; dropped the unused `PER_PAGE` constant.
+- Refreshed `CLAUDE.md` and this dev log.
 
 <!--
 Entry template:
