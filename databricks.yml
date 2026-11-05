@@ -43,6 +43,17 @@ resources:
       catalog_name: ${var.catalog}
       name: ${var.prefix}gold
       comment: Kimball star schema and page report tables.
+  pipelines:
+    medallion:
+      name: ${var.prefix}anilist_medallion
+      catalog: ${var.catalog}
+      schema: ${var.prefix}bronze            # default schema for tables in this pipeline
+      serverless: true                       # Free Edition only offers serverless
+      configuration:
+        landing_path: /Volumes/${var.catalog}/${var.prefix}landing/raw   # becomes ${landing_path} in the SQL
+      libraries:
+        - file:
+            path: src/pipeline/bronze.sql
 
   jobs:
     daily:
