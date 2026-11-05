@@ -81,6 +81,11 @@ resources:
               - --landing-dir
               - /Volumes/${var.catalog}/${var.prefix}landing/raw
           environment_key: default
+        - task_key: medallion
+          depends_on:
+            - task_key: fetch       # runs only if fetch succeeded, so a failed fetch never reaches Bronze
+          pipeline_task:
+            pipeline_id: ${resources.pipelines.medallion.id}   # this target's own pipeline
       environments:
         - environment_key: default
           spec:
