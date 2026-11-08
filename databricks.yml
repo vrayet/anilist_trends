@@ -60,6 +60,8 @@ resources:
             path: src/pipeline/silver.sql
         - file:
             path: src/pipeline/dim_date.sql
+        - file:
+            path: src/pipeline/dim_title.sql
   jobs:
     daily:
       name: ${var.prefix}anilist_daily
