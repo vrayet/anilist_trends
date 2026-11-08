@@ -49,6 +49,14 @@ Locally they live in a gitignored root `.env`. Its lines have no `export`, so lo
 - Add new decisions to the "Key decisions" table and problems/fixes to "Problems hit". Update "Open questions / next steps" (remove resolved items).
 - Record facts, the reasoning behind choices, and problems hit. Don't invent lessons or opinions the user didn't express. Append; don't rewrite earlier entries, including the user's in-progress TODOs.
 
+## Code explainer
+
+`.archive/CODE_EXPLAINED.md` (gitignored) explains the codebase so the user can feed it to NotebookLM for slides and an audio overview. Whenever `/init` is run, also update it to match the current code:
+- Cover every code file on the branch; add sections for new files and layers, and remove anything that no longer exists.
+- Keep the style: one analogy per concept, then how the code implements it and why. Pitch it at a learner, but don't make it babyish.
+- Keep it NotebookLM-friendly: numbered sections with one idea per heading (each becomes a slide), mostly prose (it's read aloud), very little code, no ASCII diagrams, and end with a design-principles summary.
+- Mark each layer as built, next, or planned to match the current state.
+
 ## AniList API notes
 
 - Single GraphQL endpoint `https://graphql.anilist.co`, no auth for public queries; POST `{"query": ..., "variables": ...}`. Response rows are at `data.Page.media[]`.

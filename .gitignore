@@ -11,3 +11,4 @@ transform/dbt_packages/
 site/
 .databricks/
 .vscode/
+.archive/

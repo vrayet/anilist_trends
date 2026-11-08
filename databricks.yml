@@ -58,8 +58,8 @@ resources:
   jobs:
     daily:
       name: ${var.prefix}anilist_daily
-      # Logical date of the run. Default = the day the run was triggered (UTC).
-      # Override it only to re-run TODAY after a failure; see the warning below.
+      # No backfill: AniList only returns today's data, so a past date would stamp today's numbers as history.
+      # Override snapshot_date only to re-run today.
       parameters:
         - name: snapshot_date
           default: "{{job.trigger.time.iso_date}}"
@@ -86,6 +86,9 @@ resources:
             - task_key: fetch       # runs only if fetch succeeded, so a failed fetch never reaches Bronze
           pipeline_task:
             pipeline_id: ${resources.pipelines.medallion.id}   # this target's own pipeline
+      email_notifications:
+        on_failure:
+          - ${workspace.current_user.userName}
       environments:
         - environment_key: default
           spec:
