@@ -52,11 +52,14 @@ resources:
       configuration:
         landing_path: /Volumes/${var.catalog}/${var.prefix}landing/raw   # becomes ${landing_path} in the SQL
         silver_schema: ${var.catalog}.${var.prefix}silver   # becomes ${silver_schema} in the SQL
+        gold_schema: ${var.catalog}.${var.prefix}gold        # becomes ${gold_schema} in the SQL
       libraries:
         - file:
             path: src/pipeline/bronze.sql
         - file:
             path: src/pipeline/silver.sql
+        - file:
+            path: src/pipeline/dim_date.sql
   jobs:
     daily:
       name: ${var.prefix}anilist_daily
