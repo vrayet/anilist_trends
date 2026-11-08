@@ -51,10 +51,12 @@ resources:
       serverless: true                       # Free Edition only offers serverless
       configuration:
         landing_path: /Volumes/${var.catalog}/${var.prefix}landing/raw   # becomes ${landing_path} in the SQL
+        silver_schema: ${var.catalog}.${var.prefix}silver   # becomes ${silver_schema} in the SQL
       libraries:
         - file:
             path: src/pipeline/bronze.sql
-
+        - file:
+            path: src/pipeline/silver.sql
   jobs:
     daily:
       name: ${var.prefix}anilist_daily
