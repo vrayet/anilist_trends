@@ -37,11 +37,13 @@ ranked AS (
     *,
     -- reruns land a second run= file for the same day; the whole day comes from the newest run,
     -- so titles that dropped out of the top 200 between runs don't linger
-    max(run_id) OVER (PARTITION BY snapshot_date) AS latest_run,
-    -- a title can appear twice in one run if its rank shifts while pages are fetched
+    -- per country too: a hand-landed single-country file must not drop the other countries
+    max(run_id) OVER (PARTITION BY snapshot_date, country) AS latest_run,
+    -- a title can appear twice in one run if its rank shifts while pages are fetched;
+    -- trending, then popularity, break that tie so the kept row is deterministic
     ROW_NUMBER() OVER (
       PARTITION BY title_id, snapshot_date
-      ORDER BY run_id DESC
+      ORDER BY run_id DESC, trending DESC, popularity DESC
     ) AS rn
   FROM flattened
 )
