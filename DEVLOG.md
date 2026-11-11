@@ -31,6 +31,16 @@ Raw notes for a portfolio blog post once the project is done. Newest session at 
 | `write_raw` opens files with mode `"x"` | Raw files can't be refetched, so a filename clash must fail loudly instead of overwriting | 2026-11-02 |
 | `main(argv=None)` passed to `parse_args` | Databricks notebook kernels inject `-f` into `sys.argv`; callers can pass their own args | 2026-11-02 |
 | pytest (dev) with `pythonpath = ["src"]`, `testpaths = ["tests"]` | pytest only puts the test file's own folder on the import path, so `import fetch` needs `src` added; keeps `src` from becoming a package | 2026-11-04 |
+| Daily Job: `fetch` task then `medallion` pipeline task, `depends_on` fetch | A failed fetch never reaches Bronze | 2026-11-04 |
+| `snapshot_date` as a Job parameter defaulting to the trigger date; no backfill | AniList only returns today's data, so a past date would stamp today's numbers as history | 2026-11-04 |
+| Schedule unpaused only in prod (00:40 UTC); dev runs on demand | Only prod collects the time series; 10 min after v1's 00:30 run so the two never hit the rate limit together | 2026-11-04 |
+| Bronze as a streaming table over the Volume with `read_files`, plus `source_file` and `ingested_at` | Each landing file is read exactly once; the path carries lineage (date, country, run) | 2026-11-05 |
+| Email on Job failure to the deploying user (dev + prod) | A missed day can't be refetched, so a failure has to be noticed the same day | 2026-11-08 |
+| Silver `title_daily` as a materialized view; date/country/run parsed from the file path; `ROW_NUMBER` keeps the newest run | Grain is one row per title per day, and reruns land a second `run=` file for the same day | 2026-11-08 |
+| Silver expectations `ON VIOLATION FAIL UPDATE` (title_id, snapshot_date, country) | Stop the pipeline instead of publishing bad rows | 2026-11-08 |
+| `dim_date` generated (1 Oct 2026 to 31 Dec 2027), `date_key` as a `yyyymmdd` int | Calendar days exist whether or not data does, so gaps like 19-23 Oct show up | 2026-11-08 |
+| `dim_title` SCD2 on `status` only (gaps and islands), other attributes Type 1 via `max_by` | Status is the attribute whose history matters; name/genres just take the latest | 2026-11-08 |
+| Surrogate key `xxhash64(title_id, valid_from)`, one per version row | Same version gets the same key on every refresh; `ROW_NUMBER` keys would shift | 2026-11-08 |
 
 ## Problems hit & how they were solved
 
@@ -49,7 +59,9 @@ Raw notes for a portfolio blog post once the project is done. Newest session at 
 ## Open questions / next steps
 
 - Growth for other measures (e.g. `trending`, `average_score`); so far `fct_title_growth` only covers popularity.
-- v2: landing ingestion exists (`src/fetch.py`); still to do: bronze/silver/gold tables, a Databricks job, and porting `page/` to read from gold.
+- First action next session: check prod Silver has filled every day since Sunday 2026-11-08.
+- v2 still to do: Gold facts (`fct_title_daily`, `fct_title_growth`), page report tables, and porting `page/` to read from Gold. `top10.sql` needs `title_english` and the cover URL, which Silver doesn't carry yet.
+- Extend `dim_date` past 2027-12-31 before 2028.
 
 ---
 
@@ -148,6 +160,23 @@ Raw notes for a portfolio blog post once the project is done. Newest session at 
 - ruff catches missing imports before pytest runs.
 - Added comments in `fetch.py` explaining the `"x"` mode and the fetch-all-then-write order; dropped the unused `PER_PAGE` constant.
 - Refreshed `CLAUDE.md` and this dev log.
+
+### 2026-11-04 — Daily Job
+- Added the `daily` Job to the bundle (`5eb6acd`): a `fetch` task running `src/fetch.py` on serverless (env version 3, Python 3.12, `requests`), with a `snapshot_date` job parameter defaulting to `{{job.trigger.time.iso_date}}` and a per-target `--landing-dir`.
+- Scheduled it at 00:40 UTC (06:10 IST), unpaused in prod only through a `schedule_status` variable (`bbd85e2`).
+
+### 2026-11-05 — Bronze
+- Added `src/pipeline/bronze.sql` (`ffbf25c`): streaming table `raw_pages` over the landing Volume with `read_files(json, multiLine)`, keeping each page as received plus `source_file` (`_metadata.file_path`) and `ingested_at`.
+- Added the `medallion` pipeline (serverless, default schema Bronze, `landing_path` from the pipeline config) as task 2 of the Job, after `fetch` (`4624693`).
+
+### 2026-11-08 — Silver and the first Gold dimensions (2.5 h)
+- Built: Failure email on the Job (dev + prod). Silver title_daily (dedup, 3 expectations): 600/day, rerun-safe. dim_date (457 days). dim_title SCD2 via gaps and islands; prod 1,454 titles, 1 current row each.
+- Concepts learned: explode, regexp_extract on paths, HAVING, ROW_NUMBER dedup, materialized view vs streaming table, expectations, gaps and islands, LEAD/LAG, max_by, hash surrogate keys.
+- Concepts I fumbled (revisit): grain ("per page" is wrong), surrogate key is per row, SCD2 ≠ "transaction based", deploy to prod too, push after commit.
+- Interview story unlocked: SCD2 turned a status change into two dated versions, and caught a real one I didn't plant.
+- Next session's first action: check prod Silver filled since Sunday.
+- Commits: `5dfffee` (failure email), `75cccff` (Silver), `9cef537` (`dim_date`), `175de62` (`dim_title`).
+- Refreshed `CLAUDE.md` (Job, pipeline, layer grains), this dev log, and the code explainer.
 
 <!--
 Entry template:

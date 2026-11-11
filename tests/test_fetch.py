@@ -5,6 +5,7 @@ import json
 import pytest
 import requests
 
+import fetch
 from fetch import fetch_page, write_raw
 
 # A tiny stand-in for one API page: same shape as the real thing, one title.
@@ -55,3 +56,26 @@ def test_fetch_page_raises_on_graphql_errors(monkeypatch):
 
     with pytest.raises(RuntimeError, match="AniList errors"):
         fetch_page("JP", 1)
+
+
+def test_main_writes_nothing_if_one_country_fails(tmp_path, monkeypatch):
+    # JP succeeds, KR fails: the rule is "fetch all, then write", so no file may exist.
+    def fake_fetch_country(country):
+        if country == "KR":
+            raise RuntimeError("KR down")
+        return SAMPLE_PAGES
+
+    monkeypatch.setattr(fetch, "fetch_country", fake_fetch_country)
+
+    with pytest.raises(RuntimeError, match="KR down"):
+        fetch.main(["--landing-dir", str(tmp_path)])
+    assert list(tmp_path.iterdir()) == []
+
+
+@pytest.mark.parametrize("bad_date", ["2026-11-31", "2020-01-01"])
+def test_main_rejects_invalid_or_past_snapshot_date(tmp_path, monkeypatch, bad_date):
+    # An impossible date or a backfill must stop before anything is fetched.
+    monkeypatch.setattr(fetch, "fetch_country", lambda c: pytest.fail("fetched"))
+
+    with pytest.raises(SystemExit):
+        fetch.main(["--snapshot-date", bad_date, "--landing-dir", str(tmp_path)])

@@ -7,7 +7,9 @@ AS SELECT
   _metadata.file_path AS source_file,     -- lineage: which landing file this row came from
   current_timestamp() AS ingested_at      -- when Bronze picked the file up
 FROM STREAM read_files(
-  '${landing_path}',   -- filled in from the pipeline config, so dev and prod read their own Volume
+  -- landing_path comes from the pipeline config, so dev and prod read their own Volume.
+  -- The glob skips stray files: Silver rebuilds from all of Bronze, so one bad row would fail every update.
+  '${landing_path}/snapshot_date=*/country=*/run=*.json',
   format => 'json',
   multiLine => true    -- each file is one JSON array; each element (one page) becomes one row
 );

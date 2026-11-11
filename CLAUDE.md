@@ -6,11 +6,12 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 AniList Trends tracks which manga are trending on AniList by country of origin (JP/KR/CN) as a daily time series. Branch `databricks` is v2: a rebuild as a medallion pipeline on Databricks. The v1 code (dlt `pipeline.py` → Supabase Postgres → dbt `transform/` → GitHub Actions + Pages) was deleted from this branch in `c8bdf72` and still lives on `main`. Use `git show main:<path>` to see how v1 did something (query shape, paging, merge semantics).
 
-What exists on this branch so far:
-- `databricks.yml`: Asset Bundle that declares only Unity Catalog schemas and a volume. No jobs yet.
-- `src/fetch.py`: landing ingestion. Fetches JP/KR/CN and writes raw pages to `<landing_dir>/snapshot_date=<date>/country=<CC>/run=<UTC ts>.json` (default landing dir is the dev volume `/Volumes/anilist/dev_landing/raw`). Two invariants to keep: every country is fetched before any file is written (a failure leaves the day absent, never partial), and files are opened with mode `"x"` so nothing is ever overwritten. `main(argv=None)` is there because Databricks notebook kernels inject `-f` into `sys.argv`.
-- `page/` (v1 leftover, **does not run here**): `build_page.py` imports `psycopg2`, which is no longer in the lockfile, and `top10.sql` reads `analytics.fct_title_daily`/`analytics.dim_title` from Supabase. Both need porting to the gold layer.
-- `tests/test_fetch.py`: offline pytest tests (`tmp_path`, `monkeypatch` on `requests.post`; no network or Databricks). No CI workflow. README is empty.
+Built so far: landing (`src/fetch.py`), Bronze, Silver, and the first two Gold dimensions (`dim_date`, `dim_title`), all run by one daily Job. Not built yet: the Gold facts (`fct_title_daily`, `fct_title_growth`), the page report tables, and the port of `page/`.
+
+- `src/fetch.py`: landing ingestion. Fetches JP/KR/CN and writes raw pages to `<landing_dir>/snapshot_date=<date>/country=<CC>/run=<UTC ts>.json`. Two invariants to keep: every country is fetched before any file is written (a failure leaves the day absent, never partial), and files are opened with mode `"x"` so nothing is ever overwritten. `main(argv=None)` is there because Databricks notebook kernels inject `-f` into `sys.argv`.
+- `src/pipeline/*.sql`: one Lakeflow Declarative Pipeline (SQL), each file listed under `libraries` in `databricks.yml`.
+- `page/` (v1 leftover, **does not run here**): `build_page.py` imports `psycopg2`, which is no longer in the lockfile, and `top10.sql` reads `analytics.fct_title_daily`/`analytics.dim_title` from Supabase. Both need porting to Gold. `top10.sql` also uses `title_english` and `cover_image_url`, which Silver does not carry yet.
+- `tests/test_fetch.py`: offline pytest tests (`tmp_path`, `monkeypatch` on `requests.post`; no network or Databricks). There are no tests for the SQL, no CI workflow, and the README is empty.
 
 ## Commands
 
@@ -25,18 +26,27 @@ uv run ruff format .
 
 databricks bundle validate             # check databricks.yml
 databricks bundle deploy               # deploy to dev (default target)
-databricks bundle deploy -t prod
+databricks bundle deploy -t prod       # deploy prod too; a change isn't live in prod until this runs
+databricks bundle run daily            # run the Job on demand (fetch -> medallion); add -t prod for prod
 databricks fs mkdir dbfs:/Volumes/...  # needed before `databricks fs cp` into a volume folder that doesn't exist yet
                                        # note: `databricks fs ls` prints IST times with a Z suffix
 ```
 
 ## Architecture (Databricks bundle)
 
+Everything is declared in `databricks.yml`:
 - Catalog `${var.catalog}` (default `anilist`). It must already exist: it was created by hand, and the bundle only creates what goes inside it.
-- Medallion schemas: `landing` (raw API files exactly as received), `bronze` (raw JSON as append-only tables), `silver` (typed, deduped, one row per title per day), `gold` (Kimball star schema + page report tables).
-- Managed volume `landing.raw`: one JSON file per country per run.
 - Targets `dev` (default, schema prefix `dev_`) and `prod` (no prefix) share the catalog but never share tables. Both use Databricks CLI profile `anilist` (OAuth, `auth_type = databricks-cli`). `.databricks/` is gitignored bundle state.
-- Intended grain, carried over from v1: one row per `(title_id, snapshot_date)`, where `snapshot_date` is UTC and computed once per run. v1 star schema: `fct_title_daily` (popularity, trending, average_score, chapters), `dim_title` (attributes from the latest snapshot), `fct_title_growth` (`LAG` per title, with `days_between` because titles can drop off and come back).
+- Schemas `landing`, `bronze`, `silver`, `gold`, plus managed volume `landing.raw` (one JSON file per country per run).
+- Job `daily`: task `fetch` (`spark_python_task` on `src/fetch.py`, serverless env with `requests`) then task `medallion` (the pipeline), which runs only if fetch succeeded. Scheduled 00:40 UTC, but `schedule_status` is `PAUSED` in dev and `UNPAUSED` only in prod. Emails the deploying user on failure. Job parameter `snapshot_date` defaults to the trigger date; there is no backfill, because AniList only returns today's data and a past date would stamp today's numbers as history.
+- Pipeline `medallion` (serverless): its default schema is Bronze, so Bronze tables are referenced unqualified (`raw_pages`). Other layers are written and read with `${silver_schema}` / `${gold_schema}`, and Bronze reads only `${landing_path}/snapshot_date=*/country=*/run=*.json` (a stray file would fail Silver on every update); all three come from the pipeline `configuration`, so dev and prod each use their own schemas.
+
+Data flow and grain:
+- **Bronze** `raw_pages`: streaming table over `read_files(landing_path, json, multiLine)`. One row per API page (not per title), plus `source_file` and `ingested_at`. Each landing file is read once.
+- **Silver** `title_daily`: materialized view, one row per `(title_id, snapshot_date)`. It explodes `data.Page.media` and takes `snapshot_date`, `country` and `run_id` from the file path with `regexp_extract`, because they are not in the API body. Reruns: the whole day comes from its newest `run_id` (so titles that dropped out between runs don't linger), plus `ROW_NUMBER` for a title repeated within one run. Expectations `ON VIOLATION FAIL UPDATE` on title_id, snapshot_date, and country.
+- **Gold** `dim_date`: generated calendar 2026-10-01 to 2027-12-31, with an integer key `date_key` in `yyyymmdd` form. Extend the end date before 2028.
+- **Gold** `dim_title`: SCD Type 2 on `status` only, built with gaps and islands (`LAG` change flag → running `SUM` → `LEAD` for `valid_to`). The other attributes are Type 1 via `max_by(col, snapshot_date)`. The surrogate key `title_key = xxhash64(title_id, valid_from)` is one per version row, and it is a hash rather than `ROW_NUMBER` so keys stay stable across refreshes. Current row: `is_current`, `valid_to = 9999-12-31`.
+- Planned Gold facts, carried over from v1: `fct_title_daily` (popularity, trending, average_score, chapters) and `fct_title_growth` (`LAG` per title, with `days_between` because titles can drop off and come back). A title has a row only on days it is in its country's top 200; a missing row means not ranked, not zero.
 
 ## Credentials
 
@@ -45,7 +55,7 @@ Locally they live in a gitignored root `.env`. Its lines have no `export`, so lo
 ## Dev log
 
 `DEVLOG.md` is the user's running log for a future portfolio blog post. Whenever `/init` is run, also update `DEVLOG.md`:
-- Add a dated session entry (template at the bottom of the file) for work since the last entry. Use `git log` since that date plus what happened in the current session.
+- Add a dated session entry (template at the bottom of the file) for work since the last entry. Use `git log` since that date plus what happened in the current session. If `/init` is given arguments, they are the user's own session notes: put them in that entry.
 - Add new decisions to the "Key decisions" table and problems/fixes to "Problems hit". Update "Open questions / next steps" (remove resolved items).
 - Record facts, the reasoning behind choices, and problems hit. Don't invent lessons or opinions the user didn't express. Append; don't rewrite earlier entries, including the user's in-progress TODOs.
 

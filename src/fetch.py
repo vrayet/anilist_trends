@@ -78,17 +78,27 @@ def write_raw(
 
 def main(argv: list[str] | None = None) -> None:
     parser = argparse.ArgumentParser(description=__doc__)
+    now = dt.datetime.now(dt.UTC)
+    today = now.date()
     parser.add_argument(
-        "--snapshot-date", default=dt.datetime.now(dt.UTC).date().isoformat()
+        "--snapshot-date", type=dt.date.fromisoformat, default=today.isoformat()
     )
     parser.add_argument("--landing-dir", type=Path, default=DEFAULT_LANDING_DIR)
     args = parser.parse_args(argv)
-    run_ts = dt.datetime.now(dt.UTC).strftime("%Y%m%dT%H%M%SZ")
+    # No backfill: AniList only returns today's ranking. Yesterday is allowed for a run
+    # triggered just before midnight UTC that starts just after.
+    if args.snapshot_date not in (today, today - dt.timedelta(days=1)):
+        parser.error(
+            f"--snapshot-date must be today or yesterday (UTC), got {args.snapshot_date}"
+        )
+    run_ts = now.strftime("%Y%m%dT%H%M%SZ")
 
     # Fetch every country before writing any file: a failure leaves the day absent, never partial.
     fetched = {country: fetch_country(country) for country in COUNTRIES}
     for country, pages in fetched.items():
-        path = write_raw(pages, args.landing_dir, args.snapshot_date, country, run_ts)
+        path = write_raw(
+            pages, args.landing_dir, args.snapshot_date.isoformat(), country, run_ts
+        )
         titles = sum(len(p["data"]["Page"]["media"]) for p in pages)
         print(f"{country}: {titles} titles -> {path}")
 

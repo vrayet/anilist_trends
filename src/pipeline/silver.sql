@@ -33,9 +33,12 @@ flattened AS (
 ),
 
 ranked AS (
-  -- reruns land a second run= file for the same day; newest run gets rn = 1
   SELECT
     *,
+    -- reruns land a second run= file for the same day; the whole day comes from the newest run,
+    -- so titles that dropped out of the top 200 between runs don't linger
+    max(run_id) OVER (PARTITION BY snapshot_date) AS latest_run,
+    -- a title can appear twice in one run if its rank shifts while pages are fetched
     ROW_NUMBER() OVER (
       PARTITION BY title_id, snapshot_date
       ORDER BY run_id DESC
@@ -47,4 +50,4 @@ SELECT
   snapshot_date, country, title_id, title_romaji, status, chapters,
   genres, description, popularity, trending, average_score, run_id
 FROM ranked
-WHERE rn = 1;
+WHERE run_id = latest_run AND rn = 1;
